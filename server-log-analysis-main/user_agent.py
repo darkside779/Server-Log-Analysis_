@@ -1,7 +1,12 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-from user_agent import parse
+import plotly.express as px
+from ua_parser import user_agent_parser
 from utils import SetEnv
+
+
+def parse(ua_string):
+    return user_agent_parser.Parse(ua_string)
+
 
 def user_agent_analysis(file_dir):
     # Set Working path
@@ -17,26 +22,28 @@ def user_agent_analysis(file_dir):
 
     # Parse each user agent string and extract device and browser information
     parsed_user_agents = [parse(ua) for ua in user_agents if pd.notnull(ua)]
-    devices = [ua.device.family for ua in parsed_user_agents]
-    browsers = [ua.browser.family for ua in parsed_user_agents]
+    devices = [ua.get('device', {}).get('family') for ua in parsed_user_agents]
+    browsers = [ua.get('user_agent', {}).get('family') for ua in parsed_user_agents]
 
     # Count the occurrences of each device and browser
-    device_counts = pd.Series(devices).value_counts()
-    browser_counts = pd.Series(browsers).value_counts()
+    device_counts = pd.Series(devices).value_counts().reset_index(name='Count')
+    device_counts.columns = ['Device', 'Count']
+
+    browser_counts = pd.Series(browsers).value_counts().reset_index(name='Count')
+    browser_counts.columns = ['Browser', 'Count']
 
     # Plot the distribution of devices
-    plt.figure(figsize=(12, 6))
-    device_counts.plot(kind='bar', color='skyblue')
-    plt.title('Distribution of Devices')
-    plt.xlabel('Device')
-    plt.ylabel('Number of Requests')
-    plt.xticks(rotation=45, ha='right')
-    plt.grid(axis='y')
-    plt.tight_layout()
-    plt.show()
+    fig = px.bar(device_counts, x='Device', y='Count', title='Distribution of Devices')
+    fig.show()
+
+    # Plot the distribution of browsers
+    fig = px.bar(browser_counts, x='Browser', y='Count', title='Distribution of Browsers')
+    fig.show()
+
 
 def main():
     user_agent_analysis('data/csv/server_logs.csv')
+
 
 if __name__ == "__main__":
     main()

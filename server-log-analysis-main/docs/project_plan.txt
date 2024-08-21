@@ -36,4 +36,4 @@
     Anomaly Detection:
         Apply anomaly detection techniques to identify unusual or suspicious patterns in server access (e.g., unusually high request rates, unexpected changes in user-agent distribution).
 
-By conducting these analyses, you can gain valuable insights into the behavior of users interacting with the web server, identify potential issues or areas for optimization, and make informed decisions to improve the server's performance and user experience. You can use Python libraries such as pandas, NumPy, matplotlib, and seaborn to perform these analyses and visualize the results effectively.
+By conducting these analyses, you can gain valuable insights into the behavior of users interacting with the web server, identify potential issues or areas for optimization, and make informed decisions to improve the server's performance and user experience. You can use Python libraries such as pandas, NumPy, plotly, and seaborn to perform these analyses and visualize the results effectively.

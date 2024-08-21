@@ -1,38 +1,33 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-from utils import SetEnv
+import plotly.express as px
 
-def performance_monitoring(file_dir):
-    # Set Working path
-    _env = SetEnv.set_path()
-    # Read the data from the CSV file
-    df = pd.read_csv(f'{_env}/{file_dir}')
+def performance_monitoring(file_dir: str) -> None:
+    """
+    Analyze server logs and display a bar chart of successful requests by path.
 
-    # Convert the Timestamp column to datetime
-    df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%d/%b/%Y:%H:%M:%S %z')
+    Args:
+        file_dir (str): The directory of the server log file.
+    """
+    try:
+        df = pd.read_csv(file_dir)
+        df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%d/%b/%Y:%H:%M:%S %z')
+        relevant_columns = ['Timestamp', 'Request Path', 'Status Code']
+        df = df[relevant_columns]
+        successful_requests = df[df['Status Code'] == 200]
+        request_counts = successful_requests.groupby('Request Path').size().reset_index(name='Count')
+        fig = px.bar(request_counts, x='Request Path', y='Count', title='Number of Successful Requests for Different Paths/Resources')
+        fig.show()
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_dir}")
+    except pd.errors.EmptyDataError:
+        print(f"Error: File at {file_dir} is empty")
+    except pd.errors.ParserError as e:
+        print(f"Error: Unable to parse file at {file_dir}: {e}")
 
-    # Extract relevant columns
-    relevant_columns = ['Timestamp', 'Request Path', 'Status Code']
-    df = df[relevant_columns]
-
-    # Filter out successful requests (status code 200)
-    successful_requests = df[df['Status Code'] == 200]
-
-    # Group by request path and calculate average response time
-    response_times = successful_requests.groupby('Request Path').size()
-
-    # Plot response times for different paths or resources
-    plt.figure(figsize=(12, 6))
-    response_times.plot(kind='bar', color='skyblue')
-    plt.title('Response Times for Different Paths/Resources')
-    plt.xlabel('Request Path')
-    plt.ylabel('Number of Requests')
-    plt.xticks(rotation=45, ha='right')
-    plt.grid(axis='y')
-    plt.tight_layout()
-    plt.show()
-
-def main():
+def main() -> None:
+    """
+    Main entry point of the script.
+    """
     performance_monitoring('data/csv/server_logs.csv')
 
 if __name__ == "__main__":

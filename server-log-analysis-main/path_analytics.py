@@ -1,34 +1,53 @@
 import pandas as pd
-import matplotlib.pyplot as plt
-from utils import SetEnv
+import plotly.express as px
 
-def path_analysis(file_dir):
-    # Set Working path
-    _env = SetEnv.set_path()
-    # Read the data from the CSV file
-    df = pd.read_csv(f'{_env}/{file_dir}')
+def path_analysis(file_dir: str) -> None:
+    """
+    Analyze server logs and display a bar chart of request paths.
 
-    # Extract request paths
-    request_paths = df['Request Path']
+    Args:
+        file_dir (str): The directory of the server log file.
+    """
+    try:
+        # Read the data from the CSV file
+        df = pd.read_csv(file_dir)
+        print("File read successfully")
+    except FileNotFoundError:
+        print(f"Error: File not found at {file_dir}")
+        return
+    except pd.errors.EmptyDataError:
+        print(f"Error: File at {file_dir} is empty")
+        return
+    except pd.errors.ParserError as e:
+        print(f"Error: Unable to parse file at {file_dir}: {e}")
+        return
+    except Exception as e:
+        print(f"Error reading CSV file: {e}")
+        return
 
-    # Count the occurrences of each request path
-    path_counts = request_paths.value_counts()
+    try:
+        # Extract request paths
+        request_paths = df['Request Path']
 
-    # Create a DataFrame for paths and their counts
-    path_df = pd.DataFrame({'Path': path_counts.index, 'Count': path_counts.values})
+        # Count the occurrences of each request path
+        path_counts = request_paths.value_counts()
 
-    # Plot the distribution of request paths
-    plt.figure(figsize=(10, 6))
-    plt.bar(path_df.index, path_df['Count'], color='skyblue')
-    plt.title('Distribution of Request Paths')
-    plt.xlabel('Path Reference Number')
-    plt.ylabel('Number of Requests')
-    plt.xticks(path_df.index, path_df['Path'], rotation=90)
-    plt.grid(axis='y')
-    plt.tight_layout()
-    plt.show()
+        # Create a DataFrame for paths and their counts
+        path_df = pd.DataFrame({'Path': path_counts.index, 'Count': path_counts.values})
 
-def main():
+        # Plot the distribution of request paths using Plotly
+        fig = px.bar(path_df, x='Path', y='Count', title='Distribution of Request Paths')
+        fig.update_layout(xaxis_title='Path Reference Number', yaxis_title='Number of Requests')
+
+        # Show the plot
+        fig.show()
+    except Exception as e:
+        print(f"Error generating plot: {e}")
+
+def main() -> None:
+    """
+    Main entry point of the script.
+    """
     path_analysis('data/csv/server_logs.csv')
 
 if __name__ == "__main__":
