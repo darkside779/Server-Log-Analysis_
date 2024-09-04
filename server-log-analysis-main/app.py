@@ -1,13 +1,33 @@
-from flask import Flask, render_template
+from flask import Flask, render_template, request, redirect, url_for, flash, session
+from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user
 import plotly.io as pio
 import plotly.express as px
 from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 from config import Config
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
 app.config.from_object(Config)
+app.secret_key = 'your_secret_key'  # Replace with a secure secret key
 db = SQLAlchemy(app)
+
+# Set up Flask-Login
+login_manager = LoginManager()
+login_manager.init_app(app)
+login_manager.login_view = 'login'  # Redirect to login page if not logged in
+
+# Define the User model
+class User(UserMixin, db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(150), unique=True, nullable=False)
+    password_hash = db.Column(db.String(256), nullable=False)
+
+    def set_password(self, password):
+        self.password_hash = generate_password_hash(password)
+
+    def check_password(self, password):
+        return check_password_hash(self.password_hash, password)
 
 # Define the LogEntry model
 class LogEntry(db.Model):
@@ -42,12 +62,38 @@ def populate_db():
     db.session.commit()
     print("Database populated.")
 
+# User loader callback for Flask-Login
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
 
-# Query data for visualizations
+# Login route
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password')
+
+    return render_template('login.html')
+
+# Logout route
+@app.route('/logout')
+@login_required
+def logout():
+    logout_user()
+    return redirect(url_for('login'))
+
+# Protected route for the dashboard
 @app.route('/')
+@login_required
 def index():
-
-    log_entries = LogEntry.query.all()
     # Query the top 10 most frequent IP addresses
     ip_counts = db.session.query(
         LogEntry.ip_address, db.func.count(LogEntry.ip_address).label('Count')
@@ -71,16 +117,23 @@ def index():
     request_counts_df = pd.DataFrame(request_counts, columns=['Request Path', 'Count'])
     fig3 = px.bar(request_counts_df, x='Request Path', y='Count', title='Number of Successful Requests for Different Paths/Resources')
     plot3_html = pio.to_html(fig3, full_html=False)
-    
-
 
     return render_template('index.html', plot1=plot1_html, plot2=plot2_html, plot3=plot3_html)
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        populate_db()  # Make sure this is uncommented for the initial run
+        # Uncomment the following line if you need to populate the database
+        # populate_db()
+        # Create an admin user if it doesn't exist
+        if User.query.filter_by(username='admin').first() is None:
+            admin_user = User(username='admin')
+            admin_user.set_password('password123')  # Change the password for production use
+            db.session.add(admin_user)
+            db.session.commit()
     app.run(debug=True)
+
+# Handle any exceptions during commit
 try:
     db.session.commit()
 except Exception as e:
