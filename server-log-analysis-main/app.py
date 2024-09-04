@@ -71,6 +71,8 @@ def index():
     request_counts_df = pd.DataFrame(request_counts, columns=['Request Path', 'Count'])
     fig3 = px.bar(request_counts_df, x='Request Path', y='Count', title='Number of Successful Requests for Different Paths/Resources')
     plot3_html = pio.to_html(fig3, full_html=False)
+    
+
 
     return render_template('index.html', plot1=plot1_html, plot2=plot2_html, plot3=plot3_html)
 
