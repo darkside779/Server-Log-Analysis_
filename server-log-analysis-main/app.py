@@ -1,15 +1,18 @@
+import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
 from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user
 import plotly.io as pio
+import plotly.graph_objects as go
 import plotly.express as px
 from flask_sqlalchemy import SQLAlchemy
 import pandas as pd
 from config import Config
 from werkzeug.security import generate_password_hash, check_password_hash
+from urllib.parse import urlparse
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'your_secret_key'  # Replace with a secure secret key
+app.secret_key = 'our_secret_key'  # Replace with a secure secret key
 db = SQLAlchemy(app)
 
 # Set up Flask-Login
@@ -103,19 +106,38 @@ def index():
     plot1_html = pio.to_html(fig1, full_html=False)
 
     # Query the number of requests over time
+    # Query data from the database
     requests_over_time = db.session.query(
-        db.func.date(LogEntry.timestamp).label('Date'), db.func.count(LogEntry.id).label('Number of Requests')
-    ).group_by(db.func.date(LogEntry.timestamp)).all()
-    requests_df = pd.DataFrame(requests_over_time, columns=['Date', 'Number of Requests'])
-    fig2 = px.line(requests_df, x='Date', y='Number of Requests', title='Requests Over Time')
+        LogEntry.timestamp.label('Timestamp')
+    ).all()
+
+    # Convert the result to a DataFrame
+    requests_df = pd.DataFrame(requests_over_time, columns=['Timestamp'])
+
+    # Group by 'Timestamp' and count the number of requests
+    requests_over_time_grouped = requests_df.groupby('Timestamp').size().reset_index(name='Number of Requests')
+
+    # Create the line plot
+    fig2 = px.line(requests_over_time_grouped, x='Timestamp', y='Number of Requests', title='Requests Over Time')
     plot2_html = pio.to_html(fig2, full_html=False)
 
-    # Query the number of successful requests for different paths
+
     request_counts = db.session.query(
         LogEntry.request_path, db.func.count(LogEntry.request_path).label('Count')
     ).filter(LogEntry.response_code == 200).group_by(LogEntry.request_path).all()
     request_counts_df = pd.DataFrame(request_counts, columns=['Request Path', 'Count'])
-    fig3 = px.bar(request_counts_df, x='Request Path', y='Count', title='Number of Successful Requests for Different Paths/Resources')
+
+    fig3 = go.Figure(
+        data=[go.Bar(
+            x=request_counts_df['Request Path'],
+            y=request_counts_df['Count'],
+            marker=dict(color=request_counts_df['Count'])
+        )],
+        layout=go.Layout(
+            title="Number of Successful Requests for Different Paths/Resources"
+        )
+    )
+
     plot3_html = pio.to_html(fig3, full_html=False)
 
     return render_template('index.html', plot1=plot1_html, plot2=plot2_html, plot3=plot3_html)
