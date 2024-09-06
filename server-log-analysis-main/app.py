@@ -1,6 +1,5 @@
-import os
 from flask import Flask, render_template, request, redirect, url_for, flash, session
-from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user
+from flask_login import UserMixin, login_user, LoginManager, login_required, logout_user, current_user
 import plotly.io as pio
 import plotly.graph_objects as go
 import plotly.express as px
@@ -9,16 +8,18 @@ import pandas as pd
 from config import Config
 from werkzeug.security import generate_password_hash, check_password_hash
 from urllib.parse import urlparse
+from ua_parser import user_agent_parser  
+from utils import SetEnv  
 
 app = Flask(__name__)
 app.config.from_object(Config)
-app.secret_key = 'our_secret_key'  # Replace with a secure secret key
+app.secret_key = 'our_secret_key'
 db = SQLAlchemy(app)
 
 # Set up Flask-Login
 login_manager = LoginManager()
 login_manager.init_app(app)
-login_manager.login_view = 'login'  # Redirect to login page if not logged in
+login_manager.login_view = 'login'
 
 # Define the User model
 class User(UserMixin, db.Model):
@@ -43,6 +44,57 @@ class LogEntry(db.Model):
     user_agent = db.Column(db.String(255))
     referrer = db.Column(db.String(2083))
 
+# User loader function for Flask-Login
+@login_manager.user_loader
+def load_user(user_id):
+    return User.query.get(int(user_id))
+
+# Helper function for parsing user agents
+def parse_user_agent(ua_string):
+    return user_agent_parser.Parse(ua_string)
+
+# User agent analysis function
+def user_agent_analysis():
+    _env = SetEnv.set_path()
+    file_path = f'{_env}/data/csv/server_logs.csv'
+
+    # Read the data from the CSV file
+    df = pd.read_csv(file_path)
+    df['Timestamp'] = pd.to_datetime(df['Timestamp'], format='%d/%b/%Y:%H:%M:%S %z')
+
+    # Extract User Agents
+    user_agents = df['User Agent']
+
+    # Parse each user agent string and extract device and browser information
+    parsed_user_agents = [parse_user_agent(ua) for ua in user_agents if pd.notnull(ua)]
+    devices = [ua.get('device', {}).get('family') for ua in parsed_user_agents]
+    browsers = [ua.get('user_agent', {}).get('family') for ua in parsed_user_agents]
+
+    # Count the occurrences of each device and browser
+    device_counts = pd.Series(devices).value_counts().reset_index(name='Count')
+    device_counts.columns = ['Device', 'Count']
+
+    browser_counts = pd.Series(browsers).value_counts().reset_index(name='Count')
+    browser_counts.columns = ['Browser', 'Count']
+
+    return device_counts, browser_counts
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form['username']
+        password = request.form['password']
+        user = User.query.filter_by(username=username).first()
+
+        if user is not None and user.check_password(password):
+            login_user(user)
+            return redirect(url_for('index'))
+        else:
+            flash('Invalid username or password')
+
+    return render_template('login.html')
+
 # Load data from CSV and populate the database (run this once to populate the database)
 def populate_db():
     df = pd.read_csv('data/csv/server_logs.csv')
@@ -65,96 +117,86 @@ def populate_db():
     db.session.commit()
     print("Database populated.")
 
-# User loader callback for Flask-Login
-@login_manager.user_loader
-def load_user(user_id):
-    return User.query.get(int(user_id))
-
-# Login route
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        user = User.query.filter_by(username=username).first()
-
-        if user and user.check_password(password):
-            login_user(user)
-            return redirect(url_for('index'))
-        else:
-            flash('Invalid username or password')
-
-    return render_template('login.html')
-
-# Logout route
-@app.route('/logout')
-@login_required
-def logout():
-    logout_user()
-    return redirect(url_for('login'))
-
-# Protected route for the dashboard
 @app.route('/')
 @login_required
 def index():
-    # Query the top 10 most frequent IP addresses
     ip_counts = db.session.query(
         LogEntry.ip_address, db.func.count(LogEntry.ip_address).label('Count')
     ).group_by(LogEntry.ip_address).order_by(db.func.count(LogEntry.ip_address).desc()).limit(10).all()
+
     ip_counts_df = pd.DataFrame(ip_counts, columns=['IP Address', 'Count'])
     fig1 = px.bar(ip_counts_df, x='IP Address', y='Count', title='Top 10 Most Frequent IP Addresses')
     plot1_html = pio.to_html(fig1, full_html=False)
 
-    # Query the number of requests over time
-    # Query data from the database
-    requests_over_time = db.session.query(
-        LogEntry.timestamp.label('Timestamp')
-    ).all()
-
-    # Convert the result to a DataFrame
+    requests_over_time = db.session.query(LogEntry.timestamp.label('Timestamp')).all()
     requests_df = pd.DataFrame(requests_over_time, columns=['Timestamp'])
-
-    # Group by 'Timestamp' and count the number of requests
     requests_over_time_grouped = requests_df.groupby('Timestamp').size().reset_index(name='Number of Requests')
-
-    # Create the line plot
     fig2 = px.line(requests_over_time_grouped, x='Timestamp', y='Number of Requests', title='Requests Over Time')
     plot2_html = pio.to_html(fig2, full_html=False)
-
 
     request_counts = db.session.query(
         LogEntry.request_path, db.func.count(LogEntry.request_path).label('Count')
     ).filter(LogEntry.response_code == 200).group_by(LogEntry.request_path).all()
-    request_counts_df = pd.DataFrame(request_counts, columns=['Request Path', 'Count'])
 
+    request_counts_df = pd.DataFrame(request_counts, columns=['Request Path', 'Count'])
     fig3 = go.Figure(
         data=[go.Bar(
-            x=request_counts_df['Request Path'],
+            x=request_counts_df['Request Path'].apply(lambda x: x.split('/')[-2]),
             y=request_counts_df['Count'],
-            marker=dict(color=request_counts_df['Count'])
+            marker=dict(color=request_counts_df['Count']),
+            hovertext=request_counts_df['Request Path'],
+            hoverinfo="text+y"
         )],
         layout=go.Layout(
-            title="Number of Successful Requests for Different Paths/Resources"
+            title="Number of Successful Requests for Different Paths/Resources",
+            xaxis=dict(title='Request Path'),
+            yaxis=dict(title='Count')
         )
     )
-
     plot3_html = pio.to_html(fig3, full_html=False)
 
-    return render_template('index.html', plot1=plot1_html, plot2=plot2_html, plot3=plot3_html)
+    # Perform user agent analysis and create visualizations
+    device_counts, browser_counts = user_agent_analysis()
+
+    fig4 = px.bar(device_counts, x='Device', y='Count', title='Distribution of Devices')
+    plot4_html = pio.to_html(fig4, full_html=False)
+
+    # Query the status code counts from the database
+    status_code_counts = db.session.query(
+        LogEntry.response_code, db.func.count(LogEntry.response_code).label('Count')
+    ).group_by(LogEntry.response_code).order_by(db.func.count(LogEntry.response_code).desc()).all()
+
+    # Convert query results to a DataFrame
+    status_code_df = pd.DataFrame(status_code_counts, columns=['Status Code', 'Count'])
+
+    # Create a Plotly bar chart similar to the IP addresses example
+    fig5 = px.bar(
+        status_code_df, 
+        x='Status Code', 
+        y='Count', 
+        title='Distribution of Status Codes',
+        labels={'Status Code': 'Status Code', 'Count': 'Frequency'},
+        color='Status Code',
+        category_orders={'Status Code': status_code_df['Status Code'].unique()}
+    )
+    # Convert Plotly figure to HTML
+    plot5_html = pio.to_html(fig5, full_html=False)
+
+
+    return render_template('index.html', plot1=plot1_html, plot2=plot2_html, plot3=plot3_html, plot4=plot4_html, plot5=plot5_html)
 
 if __name__ == '__main__':
     with app.app_context():
         db.create_all()
-        # Uncomment the following line if you need to populate the database
-        # populate_db()
-        # Create an admin user if it doesn't exist
-        if User.query.filter_by(username='admin').first() is None:
+
+    populate_db()
+
+    if User.query.filter_by(username='admin').first() is None:
             admin_user = User(username='admin')
             admin_user.set_password('password123')  # Change the password for production use
             db.session.add(admin_user)
             db.session.commit()
     app.run(debug=True)
-
 # Handle any exceptions during commit
 try:
     db.session.commit()
