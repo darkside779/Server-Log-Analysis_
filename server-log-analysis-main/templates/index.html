@@ -3,13 +3,19 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link href="css/black-dashboard.min.css" rel="stylesheet" />
+    <link href="{{ url_for('static', filename='css/black-dashboard.min.css') }}" rel="stylesheet" />
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/black-dashboard.min.css') }}">
+    <link rel="stylesheet" href="{{ url_for('static', filename='css/theme-switcher.css') }}">
+    <script src="https://cdn.plot.ly/plotly-latest.min.js"></script>
+
     <title>Dashboard</title>
 </head>
 <body>
     <h1>Dashboard</h1>
 
     <h1>Server Log Analysis</h1>
-    <h2>Top 10 Most Frequent IP Addresses</h2>
+    <h2>Top 50 Most Frequent IP Addresses</h2>
     <div>
       {{ plot1|safe }}
     </div>
@@ -21,6 +27,13 @@
     <div>
       {{ plot3|safe }}
     </div>
-
+    <h2>Number of devices</h2>
+    <div>
+      {{ plot4|safe }}
+    </div>
+    <h2>Number of devices</h2>
+    <div>
+      {{ plot5|safe }}
+    </div>
 </body>
 </html>
